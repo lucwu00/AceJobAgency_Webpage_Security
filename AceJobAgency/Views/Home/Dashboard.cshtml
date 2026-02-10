@@ -1,0 +1,157 @@
+﻿@model Member
+@{
+    ViewData["Title"] = "Dashboard";
+
+    var singaporeTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Singapore Standard Time");
+    var lastLogin = Model.LastLoginAt.HasValue
+        ? TimeZoneInfo.ConvertTimeFromUtc(Model.LastLoginAt.Value, singaporeTimeZone)
+        : (DateTime?)null;
+    var createdAt = TimeZoneInfo.ConvertTimeFromUtc(Model.CreatedAt, singaporeTimeZone);
+}
+
+<div class="row">
+    <div class="col-md-8">
+        <h2>Welcome, @Model.FirstName @Model.LastName!</h2>
+        <p class="text-muted">Member since @TimeZoneInfo.ConvertTimeFromUtc(Model.CreatedAt, singaporeTimeZone).ToString("MMMM dd, yyyy")</p>
+
+        <div class="card mt-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Your Profile Information</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless">
+                    <tbody>
+                        <tr>
+                            <th scope="row" style="width: 30%;">Full Name:</th>
+                            <td>@Model.FirstName @Model.LastName</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Gender:</th>
+                            <td>@Model.Gender</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">NRIC:</th>
+                            <td>
+                                <span class="badge bg-success">@ViewBag.DecryptedNRIC</span>
+                                <small class="text-muted">(Decrypted)</small>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Email:</th>
+                            <td>@Model.Email</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Date of Birth:</th>
+                            <td>@Model.DateOfBirth.ToString("MMMM dd, yyyy")</td>
+                        </tr>
+                        @if (!string.IsNullOrEmpty(Model.WhoAmI))
+                        {
+                            <tr>
+                                <th scope="row">About Me:</th>
+                                <td>@Model.WhoAmI</td>
+                            </tr>
+                        }
+                        @if (!string.IsNullOrEmpty(Model.ResumePath))
+                        {
+                            <tr>
+                                <th scope="row">Resume:</th>
+                                <td>
+                                    <a href="@Model.ResumePath" target="_blank" class="btn btn-sm btn-outline-primary">
+                                        📄 View Resume
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                        <tr>
+                            <th scope="row">Last Login:</th>
+                            <td>
+                                @if (lastLogin.HasValue)
+                                {
+                                    @lastLogin.Value.ToString("MMMM dd, yyyy hh:mm:ss tt")
+                                    <small class="text-muted">(SGT)</small>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Never</span>
+                                }
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">Security Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <strong>🔒 Your data is protected:</strong>
+                    <ul class="mb-0 mt-2">
+                        <li>Your NRIC is encrypted in our database using AES-256 encryption</li>
+                        <li>Your password is hashed using BCrypt with salt</li>
+                        <li>All sessions are tracked and monitored for security</li>
+                        <li>Failed login attempts trigger automatic account lockout</li>
+                        <li>Password expires after 2 minutes (for testing)</li>
+                    </ul>
+                </div>
+                <a asp-controller="Account" asp-action="ChangePassword" class="btn btn-warning">
+                    Change Password
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" disabled>Browse Jobs</button>
+                    <button class="btn btn-primary" disabled>My Applications</button>
+                    <button class="btn btn-primary" disabled>Update Profile</button>
+                    <a asp-controller="Account" asp-action="ChangePassword" class="btn btn-warning">Change Password</a>
+                </div>
+                <small class="text-muted mt-2 d-block">Some features coming soon!</small>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Account Status</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Status:</strong> <span class="badge bg-success">Active</span></p>
+                <p><strong>Member Type:</strong> Basic</p>
+                <p class="mb-0"><strong>Account Created:</strong><br>@TimeZoneInfo.ConvertTimeFromUtc(Model.CreatedAt, singaporeTimeZone).ToString("MMMM dd, yyyy")</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script nonce="@Context.Items["CspNonce"]">
+        // Session timeout countdown (shows remaining time in console)
+        var sessionTimeoutMinutes = 1; // 1 minute session
+        var loginTime = new Date().getTime();
+        var expiryTime = loginTime + (sessionTimeoutMinutes * 60 * 1000);
+
+        var countdownInterval = setInterval(function() {
+            var now = new Date().getTime();
+            var remaining = Math.ceil((expiryTime - now) / 1000);
+
+            if (remaining <= 0) {
+                clearInterval(countdownInterval);
+                alert('Your session has expired. You will be redirected to login.');
+                window.location.href = '/Account/Login';
+            } else if (remaining === 10) {
+                console.log('⚠️ Session expires in 10 seconds');
+            } else if (remaining === 30) {
+                console.log('⚠️ Session expires in 30 seconds');
+            }
+        }, 1000);
+    </script>
+}

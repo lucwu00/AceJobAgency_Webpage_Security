@@ -1,0 +1,14 @@
+﻿@{
+    ViewData["Title"] = "Error";
+}
+
+<div class="text-center">
+    <h1 class="display-1">@ViewBag.StatusCode</h1>
+    <h2 class="display-4">@ViewBag.ErrorMessage</h2>
+    <p class="lead">@ViewBag.ErrorDescription</p>
+
+    <div class="mt-4">
+        <a asp-controller="Home" asp-action="Index" class="btn btn-primary">Go to Homepage</a>
+        <button onclick="history.back()" class="btn btn-secondary">Go Back</button>
+    </div>
+</div>

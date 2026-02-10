@@ -1,0 +1,183 @@
+﻿@model RegisterViewModel
+@{
+    ViewData["Title"] = "Register";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h2>Member Registration</h2>
+        <p class="text-muted">Join Ace Job Agency today</p>
+
+        @if (!ViewData.ModelState.IsValid)
+        {
+        <div class="alert alert-danger">
+            <ul>
+                @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+                    {
+                <li>@error.ErrorMessage</li>
+                    }
+            </ul>
+        </div>
+        }
+
+        <form asp-action="Register" method="post" enctype="multipart/form-data">
+            @Html.AntiForgeryToken()
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">First Name</label>
+                    <input name="FirstName" class="form-control" required />
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Last Name</label>
+                    <input name="LastName" class="form-control" required />
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Gender</label>
+                    <select name="Gender" class="form-select" required>
+                        <option value="">Select Gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Date of Birth</label>
+                    <input name="DateOfBirth" type="date" class="form-control" required />
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">NRIC</label>
+                <input name="NRIC" class="form-control" placeholder="S1234567A" required />
+                <small class="form-text text-muted">Format: S1234567A (This will be encrypted)</small>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Email</label>
+                <input name="Email" type="email" class="form-control" required />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Password</label>
+                <div class="input-group">
+                    <input name="Password" type="password" class="form-control" id="password" required />
+                    <button class="btn btn-outline-secondary" type="button" id="togglePassword" tabindex="-1">
+                        <i class="bi bi-eye" id="passwordIcon"></i>
+                    </button>
+                </div>
+                <small class="form-text text-muted">
+                    Min 12 characters with uppercase, lowercase, number, and special character
+                </small>
+                <div id="passwordStrength" class="mt-2"></div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Confirm Password</label>
+                <div class="input-group">
+                    <input name="ConfirmPassword" type="password" class="form-control" id="confirmPassword" required />
+                    <button class="btn btn-outline-secondary" type="button" id="toggleConfirmPassword" tabindex="-1">
+                        <i class="bi bi-eye" id="confirmPasswordIcon"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Resume</label>
+                <input name="Resume" type="file" class="form-control" accept=".pdf,.docx" required />
+                <small class="form-text text-muted">Allowed: PDF, DOCX (Max 5MB)</small>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Who Am I</label>
+                <textarea name="WhoAmI" class="form-control" rows="4" placeholder="Tell us about yourself..." required></textarea>
+            </div>
+
+            <input type="hidden" name="RecaptchaToken" value="test-token" />
+
+            <div class="d-grid gap-2">
+                <button type="submit" class="btn btn-primary btn-lg">Register</button>
+            </div>
+
+            <div class="text-center mt-3">
+                Already have an account? <a href="/Account/Login">Login here</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <script nonce="@Context.Items["CspNonce"]">
+        // Password toggle
+        document.getElementById('togglePassword').addEventListener('click', function() {
+            const passwordField = document.getElementById('password');
+            const icon = document.getElementById('passwordIcon');
+
+            if (passwordField.type === 'password') {
+                passwordField.type = 'text';
+                icon.classList.remove('bi-eye');
+                icon.classList.add('bi-eye-slash');
+            } else {
+                passwordField.type = 'password';
+                icon.classList.remove('bi-eye-slash');
+                icon.classList.add('bi-eye');
+            }
+        });
+
+        // Confirm password toggle
+        document.getElementById('toggleConfirmPassword').addEventListener('click', function() {
+            const confirmPasswordField = document.getElementById('confirmPassword');
+            const icon = document.getElementById('confirmPasswordIcon');
+
+            if (confirmPasswordField.type === 'password') {
+                confirmPasswordField.type = 'text';
+                icon.classList.remove('bi-eye');
+                icon.classList.add('bi-eye-slash');
+            } else {
+                confirmPasswordField.type = 'password';
+                icon.classList.remove('bi-eye-slash');
+                icon.classList.add('bi-eye');
+            }
+        });
+
+        // Password strength indicator
+        document.getElementById('password').addEventListener('input', function(e) {
+            const password = e.target.value;
+            const strengthDiv = document.getElementById('passwordStrength');
+
+            let strength = 0;
+            let feedback = [];
+
+            if (password.length >= 12) strength++;
+            if (password.length >= 16) strength++;
+            if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
+            if (/\d/.test(password)) strength++;
+            if (/[^a-zA-Z\d]/.test(password)) strength++;
+
+            if (password.length < 12) feedback.push('12+ characters');
+            if (!/[A-Z]/.test(password)) feedback.push('uppercase');
+            if (!/[a-z]/.test(password)) feedback.push('lowercase');
+            if (!/\d/.test(password)) feedback.push('number');
+            if (!/[^a-zA-Z\d]/.test(password)) feedback.push('special character');
+
+            let color, text;
+            if (strength >= 5) {
+                color = 'success';
+                text = '<strong>✓ Strong password!</strong>';
+            } else if (strength >= 3) {
+                color = 'warning';
+                text = '<strong>⚠ Medium strength.</strong> Needs: ' + feedback.join(', ');
+            } else {
+                color = 'danger';
+                text = '<strong>✗ Weak password.</strong> Needs: ' + feedback.join(', ');
+            }
+
+            strengthDiv.innerHTML = '<div class="alert alert-' + color + ' py-2 mb-0">' + text + '</div>';
+        });
+    </script>
+}

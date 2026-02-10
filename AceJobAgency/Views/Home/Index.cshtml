@@ -1,0 +1,49 @@
+﻿@{
+    ViewData["Title"] = "Home";
+}
+
+<div class="text-center">
+    <h1 class="display-4">Welcome to Ace Job Agency</h1>
+    <p class="lead">Your trusted partner for career opportunities</p>
+
+    <div class="row mt-5">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">🔒 Secure Platform</h5>
+                    <p class="card-text">Your data is protected with enterprise-grade encryption and security measures.</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">💼 Quality Jobs</h5>
+                    <p class="card-text">Access to a wide range of job opportunities from trusted employers.</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">🚀 Easy Application</h5>
+                    <p class="card-text">Simple and streamlined application process to get you hired faster.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (User.Identity?.IsAuthenticated != true)
+    {
+        <div class="mt-5">
+            <a asp-controller="Account" asp-action="Register" class="btn btn-primary btn-lg me-2">Register Now</a>
+            <a asp-controller="Account" asp-action="Login" class="btn btn-outline-primary btn-lg">Login</a>
+        </div>
+    }
+    else
+    {
+        <div class="mt-5">
+            <a asp-controller="Home" asp-action="Dashboard" class="btn btn-primary btn-lg">Go to Dashboard</a>
+        </div>
+    }
+</div>
