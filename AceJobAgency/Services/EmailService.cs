@@ -13,19 +13,22 @@
 
         public async Task SendPasswordResetEmail(string email, string resetLink)
         {
-            // For development: Log to console/output window
+            // Mask sensitive information for logging
+            var maskedEmail = MaskEmail(email);
+
+            // For development: Log to console/output window (with masked data)
             _logger.LogInformation("========================================");
             _logger.LogInformation("📧 PASSWORD RESET EMAIL");
-            _logger.LogInformation($"To: {email}");
-            _logger.LogInformation($"Reset Link: {resetLink}");
+            _logger.LogInformation($"To: {maskedEmail}");
+            _logger.LogInformation("Reset link generated (link hidden for security)");
             _logger.LogInformation("This link expires in 1 hour.");
             _logger.LogInformation("========================================");
 
-            // Also write to console for visibility
+            // Also write to console for visibility (with masked data)
             Console.WriteLine("\n========================================");
             Console.WriteLine("📧 PASSWORD RESET EMAIL");
-            Console.WriteLine($"To: {email}");
-            Console.WriteLine($"Reset Link: {resetLink}");
+            Console.WriteLine($"To: {maskedEmail}");
+            Console.WriteLine("Reset link generated (link hidden for security)");
             Console.WriteLine("This link expires in 1 hour.");
             Console.WriteLine("========================================\n");
 
@@ -37,6 +40,26 @@
             // await client.SendEmailAsync(msg);
 
             await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Masks email address for secure logging (e.g., j***@example.com)
+        /// </summary>
+        private string MaskEmail(string email)
+        {
+            if (string.IsNullOrEmpty(email) || !email.Contains("@"))
+                return "***@***.***";
+
+            var parts = email.Split('@');
+            var username = parts[0];
+            var domain = parts[1];
+
+            // Show first character of username, mask the rest
+            var maskedUsername = username.Length > 1
+                ? username[0] + new string('*', Math.Min(username.Length - 1, 3))
+                : "*";
+
+            return $"{maskedUsername}@{domain}";
         }
     }
 }
