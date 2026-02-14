@@ -30,6 +30,9 @@ namespace AceJobAgency.Models
         [Required]
         public string PasswordHash { get; set; } = string.Empty;
 
+        public string? ResetToken { get; set; }
+        public DateTime? ResetTokenExpiry { get; set; }
+
         [Required]
         public DateTime DateOfBirth { get; set; }
 

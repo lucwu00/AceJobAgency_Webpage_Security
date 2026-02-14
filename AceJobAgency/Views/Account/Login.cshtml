@@ -1,33 +1,29 @@
 ﻿@model LoginViewModel
+@inject IConfiguration Configuration
 @{
     ViewData["Title"] = "Login";
 }
-
 <div class="row justify-content-center">
     <div class="col-md-6">
         <h2>Member Login</h2>
         <p class="text-muted">Access your Ace Job Agency account</p>
-
         @if (!ViewData.ModelState.IsValid)
         {
-        <div class="alert alert-danger">
-            <ul>
-                @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+            <div class="alert alert-danger">
+                <ul>
+                    @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
                     {
-                <li>@error.ErrorMessage</li>
+                        <li>@error.ErrorMessage</li>
                     }
-            </ul>
-        </div>
+                </ul>
+            </div>
         }
-
         <form asp-action="Login" method="post">
             @Html.AntiForgeryToken()
-
             <div class="mb-3">
                 <label class="form-label">Email</label>
                 <input name="Email" type="email" class="form-control" required autofocus />
             </div>
-
             <div class="mb-3">
                 <label class="form-label">Password</label>
                 <div class="input-group">
@@ -37,8 +33,7 @@
                     </button>
                 </div>
             </div>
-
-            <input type="hidden" name="RecaptchaToken" value="test-token" />
+            <input type="hidden" id="recaptchaTokenLogin" name="RecaptchaToken" />
 
             <div class="d-grid gap-2">
                 <button type="submit" class="btn btn-primary btn-lg">Login</button>
@@ -54,13 +49,11 @@
         </form>
     </div>
 </div>
-
 @section Scripts {
     <script nonce="@Context.Items["CspNonce"]">
         document.getElementById('togglePassword').addEventListener('click', function() {
             const passwordField = document.getElementById('password');
             const icon = document.getElementById('passwordIcon');
-
             if (passwordField.type === 'password') {
                 passwordField.type = 'text';
                 icon.classList.remove('bi-eye');
@@ -70,6 +63,22 @@
                 icon.classList.remove('bi-eye-slash');
                 icon.classList.add('bi-eye');
             }
+        });
+    </script>
+
+    <!-- reCAPTCHA v3 -->
+    <script src="https://www.google.com/recaptcha/api.js?render=@Configuration["ReCaptcha:SiteKey"]"></script>
+    <script nonce="@Context.Items["CspNonce"]">
+        document.querySelector('form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            var form = this;
+            grecaptcha.ready(function() {
+                grecaptcha.execute('@Configuration["ReCaptcha:SiteKey"]', {action: 'login'})
+                    .then(function(token) {
+                        document.getElementById('recaptchaTokenLogin').value = token;
+                        form.submit();
+                    });
+            });
         });
     </script>
 }

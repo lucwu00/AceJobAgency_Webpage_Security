@@ -38,11 +38,15 @@ builder.Services.AddSession(options =>
     options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
 });
 
+// Add hosted service for background cleanup
+builder.Services.AddHostedService<SessionCleanupService>();
+
 // Register custom services
 builder.Services.AddScoped<IEncryptionService, EncryptionService>();
 builder.Services.AddScoped<IPasswordService, PasswordService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddHttpContextAccessor();
 
 // Register reCAPTCHA service (typed HttpClient)
@@ -77,6 +81,7 @@ app.UseStaticFiles();
 app.UseRouting();
 
 // CSP + NONCE MIDDLEWARE 
+// CSP + NONCE MIDDLEWARE 
 app.Use(async (context, next) =>
 {
     var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
@@ -87,10 +92,10 @@ app.Use(async (context, next) =>
     {
         "'self'",
         $"'nonce-{nonce}'",
-        "https://www.google.com",
-        "https://www.gstatic.com",
+        "https://cdn.jsdelivr.net",
         "https://cdnjs.cloudflare.com",
-        "https://cdn.jsdelivr.net"
+        "https://www.google.com",      // ✅ reCAPTCHA
+        "https://www.gstatic.com"      // ✅ reCAPTCHA
     };
 
     var styleSrc = new List<string>
@@ -118,20 +123,21 @@ app.Use(async (context, next) =>
     };
 
     var imgSrc = new List<string> { "'self'", "data:", "https://www.google.com" };
-    var frameSrc = "https://www.google.com";
+    var frameSrc = new List<string> { "'self'", "https://www.google.com" };
 
+    var fontSrc = new List<string>
+{
+    "'self'",
+    "data:",
+    "https://cdn.jsdelivr.net"
+};
     // Development relaxations (ONLY for dev)
     if (app.Environment.IsDevelopment())
     {
-        // BrowserLink and other dev tools use insecure ws:// and http:// localhost
         connectSrc.Add("ws://localhost:*");
         connectSrc.Add("http://localhost:*");
-
         scriptSrc.Add("http://localhost:*");
         styleSrc.Add("http://localhost:*");
-
-        // reCAPTCHA client may use eval-like operations in dev — allow 'unsafe-eval' only in development
-        // WARNING: remove this in production for security
         scriptSrc.Add("'unsafe-eval'");
     }
 
@@ -139,17 +145,15 @@ app.Use(async (context, next) =>
     var csp = new StringBuilder();
     csp.Append("default-src 'self'; ");
     csp.Append($"script-src {string.Join(" ", scriptSrc)}; ");
-    // ensure element-level scripts are accepted
     csp.Append($"script-src-elem {string.Join(" ", scriptSrc)}; ");
-    // worker-src for webworkers used by Google reCAPTCHA
     csp.Append($"worker-src {string.Join(" ", workerSrc)}; ");
-    csp.Append($"frame-src {frameSrc}; ");
+    csp.Append($"frame-src {string.Join(" ", frameSrc)}; ");
+    csp.Append($"font-src {string.Join(" ", fontSrc)}; ");
     csp.Append($"style-src {string.Join(" ", styleSrc)}; ");
     csp.Append($"img-src {string.Join(" ", imgSrc)}; ");
     csp.Append($"connect-src {string.Join(" ", connectSrc)};");
 
     context.Response.Headers["Content-Security-Policy"] = csp.ToString();
-
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["X-Frame-Options"] = "DENY";
     context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";

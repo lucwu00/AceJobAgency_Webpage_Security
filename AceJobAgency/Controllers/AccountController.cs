@@ -22,6 +22,7 @@ namespace AceJobAgency.Controllers
         private readonly IConfiguration _configuration;
         private readonly IWebHostEnvironment _environment;
         private readonly IRecaptchaService _recaptchaService;
+        private readonly IEmailService _emailService;
 
         // Singapore timezone
         private static readonly TimeZoneInfo SingaporeTimeZone =
@@ -35,7 +36,8 @@ namespace AceJobAgency.Controllers
             ISessionService sessionService,
             IConfiguration configuration,
             IWebHostEnvironment environment,
-            IRecaptchaService recaptchaService)
+            IRecaptchaService recaptchaService,
+        IEmailService emailService)
         {
             _context = context;
             _encryptionService = encryptionService;
@@ -45,6 +47,7 @@ namespace AceJobAgency.Controllers
             _configuration = configuration;
             _environment = environment;
             _recaptchaService = recaptchaService;
+            _emailService = emailService;
         }
 
         [HttpGet]
@@ -61,6 +64,17 @@ namespace AceJobAgency.Controllers
             {
                 return View(model);
             }
+
+            // Verify reCAPTCHA
+            var recaptchaToken = Request.Form["RecaptchaToken"].ToString();
+            if (string.IsNullOrEmpty(recaptchaToken) || !await _recaptchaService.VerifyToken(recaptchaToken))
+            {
+                ModelState.AddModelError("", "reCAPTCHA verification failed. Please try again.");
+                await _auditService.LogActivity(null, "Registration Failed - reCAPTCHA Failed", model.Email);
+                return View(model);
+            }
+
+            // Check for duplicate email
 
             // Check for duplicate email
             if (await _context.Members.AnyAsync(m => m.Email == model.Email))
@@ -79,7 +93,7 @@ namespace AceJobAgency.Controllers
             }
 
             // Handle resume upload
-            string? resumePath = null;
+            string? resumePath = null!;
             if (model.Resume != null)
             {
                 var allowedExtensions = new[] { ".pdf", ".docx" };
@@ -111,22 +125,20 @@ namespace AceJobAgency.Controllers
                 resumePath = $"/uploads/resumes/{uniqueFileName}";
             }
 
-            var now = GetSingaporeTime();
-
-            // Create member
+            // ✅ Create member with UTC timestamps
             var member = new Member
             {
                 FirstName = SanitizeInput(model.FirstName),
                 LastName = SanitizeInput(model.LastName),
                 Gender = model.Gender,
-                NRIC = _encryptionService.Encrypt(model.NRIC), // Encrypt NRIC
+                NRIC = _encryptionService.Encrypt(model.NRIC),
                 Email = model.Email.ToLower(),
                 PasswordHash = _passwordService.HashPassword(model.Password),
                 DateOfBirth = model.DateOfBirth,
                 ResumePath = resumePath,
                 WhoAmI = SanitizeInput(model.WhoAmI),
-                CreatedAt = now,
-                PasswordChangedAt = now  // Set initial password change time
+                CreatedAt = DateTime.UtcNow,
+                PasswordChangedAt = DateTime.UtcNow
             };
 
             _context.Members.Add(member);
@@ -157,6 +169,15 @@ namespace AceJobAgency.Controllers
                 return View(model);
             }
 
+            // ✅ Verify reCAPTCHA
+            var recaptchaToken = Request.Form["RecaptchaToken"].ToString();
+            if (string.IsNullOrEmpty(recaptchaToken) || !await _recaptchaService.VerifyToken(recaptchaToken))
+            {
+                ModelState.AddModelError("", "reCAPTCHA verification failed. Please try again.");
+                await _auditService.LogActivity(null, "Login Failed - reCAPTCHA Failed", model.Email);
+                return View(model);
+            }
+
             var member = await _context.Members
                 .FirstOrDefaultAsync(m => m.Email == model.Email.ToLower());
 
@@ -169,22 +190,32 @@ namespace AceJobAgency.Controllers
 
             var now = GetSingaporeTime();
 
-            // Check if account is locked
-            if (member.IsLocked && member.LockoutEnd.HasValue && member.LockoutEnd.Value > now)
+            // ✅ Check if account is locked (convert LockoutEnd from UTC to SGT)
+            if (member.IsLocked && member.LockoutEnd.HasValue)
             {
-                var remainingSeconds = (member.LockoutEnd.Value - now).TotalSeconds;
-                await _auditService.LogActivity(member.Id, "Login Attempt - Account Locked", model.Email);
-                ModelState.AddModelError("", $"Account is locked. Please try again in {Math.Ceiling(remainingSeconds)} seconds.");
-                return View(model);
+                var lockoutEndSGT = TimeZoneInfo.ConvertTimeFromUtc(member.LockoutEnd.Value, SingaporeTimeZone);
+
+                if (lockoutEndSGT > now)
+                {
+                    var remainingSeconds = (lockoutEndSGT - now).TotalSeconds;
+                    await _auditService.LogActivity(member.Id, "Login Attempt - Account Locked", model.Email);
+                    ModelState.AddModelError("", $"Account is locked. Please try again in {Math.Ceiling(remainingSeconds)} seconds.");
+                    return View(model);
+                }
             }
 
             // Reset lockout if expired
-            if (member.IsLocked && member.LockoutEnd.HasValue && member.LockoutEnd.Value <= now)
+            if (member.IsLocked && member.LockoutEnd.HasValue)
             {
-                member.IsLocked = false;
-                member.FailedLoginAttempts = 0;
-                member.LockoutEnd = null;
-                await _context.SaveChangesAsync();
+                var lockoutEndSGT = TimeZoneInfo.ConvertTimeFromUtc(member.LockoutEnd.Value, SingaporeTimeZone);
+
+                if (lockoutEndSGT <= now)
+                {
+                    member.IsLocked = false;
+                    member.FailedLoginAttempts = 0;
+                    member.LockoutEnd = null;
+                    await _context.SaveChangesAsync();
+                }
             }
 
             // Verify password
@@ -197,7 +228,7 @@ namespace AceJobAgency.Controllers
                 {
                     member.IsLocked = true;
                     var lockoutMinutes = _configuration.GetValue<int>("SecuritySettings:LockoutDurationMinutes", 1);
-                    member.LockoutEnd = now.AddMinutes(lockoutMinutes);
+                    member.LockoutEnd = DateTime.UtcNow.AddMinutes(lockoutMinutes); // ✅ Store as UTC
                     await _auditService.LogActivity(member.Id, "Account Locked - Too Many Failed Attempts", model.Email);
                     ModelState.AddModelError("", $"Too many failed login attempts. Account locked for {lockoutMinutes} minute(s).");
                 }
@@ -211,19 +242,40 @@ namespace AceJobAgency.Controllers
                 return View(model);
             }
 
-            // Check maximum password age
-            var maxPasswordAgeMinutes =
-                _configuration.GetValue<int>("SecuritySettings:MaxPasswordAgeMinutes", 0);
+            // ✅ Check maximum password age (convert PasswordChangedAt from UTC to SGT)
+            var maxPasswordAgeMinutes = _configuration.GetValue<int>("SecuritySettings:MaxPasswordAgeMinutes", 0);
 
             if (maxPasswordAgeMinutes > 0 && member.PasswordChangedAt.HasValue)
             {
-                var passwordAge = now - member.PasswordChangedAt.Value;
+                var passwordChangedAtSGT = TimeZoneInfo.ConvertTimeFromUtc(
+                    member.PasswordChangedAt.Value,
+                    SingaporeTimeZone);
+
+                var passwordAge = now - passwordChangedAtSGT;
                 var maxPasswordAge = TimeSpan.FromMinutes(maxPasswordAgeMinutes);
 
                 if (passwordAge > maxPasswordAge)
                 {
-                    TempData["ExpiredPasswordMemberId"] = member.Id;
-                    TempData["ErrorMessage"] = "Your password has expired. You must change it now.";
+                    // Create temporary authentication so user can access ChangePassword
+                    var expiredPasswordClaims = new List<Claim>
+                    {
+                        new Claim(ClaimTypes.NameIdentifier, member.Id.ToString()),
+                        new Claim(ClaimTypes.Email, member.Email),
+                        new Claim(ClaimTypes.Name, $"{member.FirstName} {member.LastName}"),
+                        new Claim("PasswordExpired", "true")
+                    };
+
+                    var expiredPasswordIdentity = new ClaimsIdentity(expiredPasswordClaims, CookieAuthenticationDefaults.AuthenticationScheme);
+                    var expiredPasswordProperties = new AuthenticationProperties
+                    {
+                        IsPersistent = false,
+                        ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(5)
+                    };
+
+                    await HttpContext.SignInAsync(
+                        CookieAuthenticationDefaults.AuthenticationScheme,
+                        new ClaimsPrincipal(expiredPasswordIdentity),
+                        expiredPasswordProperties);
 
                     await _auditService.LogActivity(
                         member.Id,
@@ -231,10 +283,10 @@ namespace AceJobAgency.Controllers
                         model.Email
                     );
 
+                    TempData["ErrorMessage"] = "Your password has expired. You must change it now.";
                     return RedirectToAction("ChangePassword");
                 }
             }
-
 
             // Check for multiple sessions from different devices
             var activeSessionCount = await _sessionService.GetActiveSessionCount(member.Id);
@@ -244,9 +296,9 @@ namespace AceJobAgency.Controllers
                 await _sessionService.InvalidateAllUserSessions(member.Id);
             }
 
-            // Successful login
+            // ✅ Successful login - store as UTC
             member.FailedLoginAttempts = 0;
-            member.LastLoginAt = now;
+            member.LastLoginAt = DateTime.UtcNow;
             member.IsLocked = false;
             member.LockoutEnd = null;
             await _context.SaveChangesAsync();
@@ -305,9 +357,154 @@ namespace AceJobAgency.Controllers
             return RedirectToAction("Login");
         }
 
+        // ========================================
+        // PASSWORD RESET FUNCTIONALITY
+        // ========================================
+
+        [HttpGet]
+        public IActionResult ForgotPassword()
+        {
+            return View();
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ForgotPassword(ForgotPasswordViewModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return View(model);
+            }
+
+            var member = await _context.Members
+                .FirstOrDefaultAsync(m => m.Email == model.Email.ToLower());
+
+            // ✅ SECURITY: Always show success message (don't reveal if email exists)
+            TempData["SuccessMessage"] = "If an account exists with that email, a password reset link has been sent. Please check your email.";
+
+            if (member != null)
+            {
+                // Generate unique, secure token
+                var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
+                    .Replace("+", "-")  // Make URL-safe
+                    .Replace("/", "_")  // Make URL-safe
+                    .Replace("=", "");  // Remove padding
+
+                // Store token with 1-hour expiry
+                member.ResetToken = token;
+                member.ResetTokenExpiry = DateTime.UtcNow.AddHours(1);
+                await _context.SaveChangesAsync();
+
+                // Generate reset link
+                var resetLink = Url.Action(
+                    "ResetPassword",
+                    "Account",
+                    new { token },
+                    Request.Scheme); // Full URL with https://
+
+                // Send email
+                await _emailService.SendPasswordResetEmail(member.Email, resetLink);
+
+                // Log activity
+                await _auditService.LogActivity(member.Id, "Password Reset Requested", $"Token sent to {member.Email}");
+            }
+            else
+            {
+                // Log failed attempt (for security monitoring)
+                await _auditService.LogActivity(null, "Password Reset Failed - Email Not Found", model.Email);
+            }
+
+            return RedirectToAction("Login");
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> ResetPassword(string token)
+        {
+            if (string.IsNullOrEmpty(token))
+            {
+                TempData["ErrorMessage"] = "Invalid reset link.";
+                return RedirectToAction("Login");
+            }
+
+            var member = await _context.Members
+                .FirstOrDefaultAsync(m => m.ResetToken == token);
+
+            if (member == null || member.ResetTokenExpiry == null ||
+                DateTime.UtcNow > member.ResetTokenExpiry)
+            {
+                TempData["ErrorMessage"] = "Invalid or expired reset link. Please request a new password reset.";
+                return RedirectToAction("Login");
+            }
+
+            ViewBag.Token = token;
+            return View();
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> ResetPassword(ResetPasswordViewModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                ViewBag.Token = model.Token;
+                return View(model);
+            }
+
+            var member = await _context.Members
+                .FirstOrDefaultAsync(m => m.ResetToken == model.Token);
+
+            if (member == null || member.ResetTokenExpiry == null ||
+                DateTime.UtcNow > member.ResetTokenExpiry)
+            {
+                TempData["ErrorMessage"] = "Invalid or expired reset link.";
+                return RedirectToAction("Login");
+            }
+
+            // Validate password strength
+            var (isValid, message) = _passwordService.ValidatePasswordStrength(model.NewPassword);
+            if (!isValid)
+            {
+                ModelState.AddModelError("NewPassword", message);
+                ViewBag.Token = model.Token;
+                return View(model);
+            }
+
+            // Check password history
+            if (!await _passwordService.CheckPasswordHistory(member.Id, model.NewPassword))
+            {
+                var historyCount = _configuration.GetValue<int>("SecuritySettings:PasswordHistoryCount", 2);
+                ModelState.AddModelError("NewPassword", $"You cannot reuse your last {historyCount} passwords.");
+                ViewBag.Token = model.Token;
+                return View(model);
+            }
+
+            // ✅ Update password
+            var newPasswordHash = _passwordService.HashPassword(model.NewPassword);
+            member.PasswordHash = newPasswordHash;
+            member.PasswordChangedAt = DateTime.UtcNow;
+
+            // ✅ Clear reset token (single-use)
+            member.ResetToken = null;
+            member.ResetTokenExpiry = null;
+
+            await _context.SaveChangesAsync();
+
+            // Add to password history
+            await _passwordService.AddPasswordToHistory(member.Id, newPasswordHash);
+
+            // ✅ Invalidate all existing sessions (security)
+            await _sessionService.InvalidateAllUserSessions(member.Id);
+
+            // Log activity
+            await _auditService.LogActivity(member.Id, "Password Reset Completed", "Password changed via reset link");
+
+            TempData["SuccessMessage"] = "Password reset successful! Please login with your new password.";
+            return RedirectToAction("Login");
+        }
+
         [HttpGet]
         [Authorize]
-        public async Task<IActionResult> ChangePassword()
+        public IActionResult ChangePassword()  // ✅ Removed 'async'
         {
             return View();
         }
@@ -339,11 +536,16 @@ namespace AceJobAgency.Controllers
                 return View(model);
             }
 
-            // ✅ Check minimum password age (1 minute for testing)
+            // ✅ Check minimum password age (convert PasswordChangedAt from UTC to SGT)
             var minPasswordAgeMinutes = _configuration.GetValue<int>("SecuritySettings:MinPasswordAgeMinutes", 0);
+
             if (minPasswordAgeMinutes > 0 && member.PasswordChangedAt.HasValue)
             {
-                var passwordAge = now - member.PasswordChangedAt.Value;
+                var passwordChangedAtSGT = TimeZoneInfo.ConvertTimeFromUtc(
+                    member.PasswordChangedAt.Value,
+                    SingaporeTimeZone);
+
+                var passwordAge = now - passwordChangedAtSGT;
                 var minPasswordAge = TimeSpan.FromMinutes(minPasswordAgeMinutes);
 
                 if (passwordAge < minPasswordAge)
@@ -370,10 +572,10 @@ namespace AceJobAgency.Controllers
                 return View(model);
             }
 
-            // Update password
+            // ✅ Update password - store as UTC
             var newPasswordHash = _passwordService.HashPassword(model.NewPassword);
             member.PasswordHash = newPasswordHash;
-            member.PasswordChangedAt = now;
+            member.PasswordChangedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
             // Add to password history
@@ -385,7 +587,7 @@ namespace AceJobAgency.Controllers
             // Log activity
             await _auditService.LogActivity(memberId, "Password Changed", "User changed password");
 
-            // ✅ FORCE LOGOUT (remove the earlier return statement)
+            // ✅ Force logout after password change
             await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             HttpContext.Session.Clear();
 

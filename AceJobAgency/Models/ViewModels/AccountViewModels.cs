@@ -78,22 +78,5 @@ namespace AceJobAgency.Models.ViewModels
         public string ConfirmPassword { get; set; } = string.Empty;
     }
 
-    public class ResetPasswordViewModel
-    {
-        [Required]
-        [EmailAddress]
-        public string Email { get; set; } = string.Empty;
-
-        [Required]
-        public string Token { get; set; } = string.Empty;
-
-        [Required]
-        [StringLength(100, MinimumLength = 12)]
-        [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{12,}$")]
-        public string NewPassword { get; set; } = string.Empty;
-
-        [Required]
-        [Compare("NewPassword")]
-        public string ConfirmPassword { get; set; } = string.Empty;
-    }
+    // ✅ DELETED ResetPasswordViewModel - it's in its own file now!
 }

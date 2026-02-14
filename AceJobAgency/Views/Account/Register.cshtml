@@ -1,4 +1,5 @@
 ﻿@model RegisterViewModel
+@inject IConfiguration Configuration
 @{
     ViewData["Title"] = "Register";
 }
@@ -98,7 +99,7 @@
                 <textarea name="WhoAmI" class="form-control" rows="4" placeholder="Tell us about yourself..." required></textarea>
             </div>
 
-            <input type="hidden" name="RecaptchaToken" value="test-token" />
+            <input type="hidden" id="recaptchaToken" name="RecaptchaToken" />
 
             <div class="d-grid gap-2">
                 <button type="submit" class="btn btn-primary btn-lg">Register</button>
@@ -178,6 +179,23 @@
             }
 
             strengthDiv.innerHTML = '<div class="alert alert-' + color + ' py-2 mb-0">' + text + '</div>';
+        });
+    </script>
+
+    <!-- reCAPTCHA v3 -->
+    <script src="https://www.google.com/recaptcha/api.js?render=@Configuration["ReCaptcha:SiteKey"]"></script>
+    <script nonce="@Context.Items["CspNonce"]">
+        document.querySelector('form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            var form = this;
+
+            grecaptcha.ready(function() {
+                grecaptcha.execute('@Configuration["ReCaptcha:SiteKey"]', {action: 'register'})
+                    .then(function(token) {
+                        document.getElementById('recaptchaToken').value = token;
+                        form.submit();
+                    });
+            });
         });
     </script>
 }
